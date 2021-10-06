@@ -146,7 +146,7 @@ int main()
     /* structure of the socket that will read what comes from the client      */
     /* ---------------------------------------------------------------------- */
     sock_read.sin_family = AF_INET;    /* AF_INET = TCP Socket                */
-    sock_read.sin_port = htons(10400); /* Port Number to Publish              */
+    sock_read.sin_port = htons(10200); /* Port Number to Publish              */
     /* Address of the computer to connect to in the case of a client          */
     inet_aton("200.13.89.15", (struct in_addr *)&sock_read.sin_addr);
     memset(sock_read.sin_zero, 0, 8);   

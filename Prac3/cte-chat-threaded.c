@@ -58,6 +58,19 @@ void *print_message(void *ptr)
       }
 }
 
+void *send_heartbeat(int sfd, int chat_id, struct sockaddr_in sock_write)
+{
+  struct data message; 
+
+  message.chat_id = chat_id;
+  strcpy(message.data_text,"( ͡° ͜ʖ ͡°)");
+  message.data_type = 1;
+  while (1)
+  {
+    sendto(sfd,(struct data *)&(message),sizeof(struct data),0,(struct sockaddr *)&(sock_write),sizeof(sock_write));
+    sleep(10);
+  }    
+}
 
 /* -------------------------------------------------------------------------- */
 /* main ()                                                                    */
@@ -82,7 +95,7 @@ int main()
     /* the IP address is the one of the server waiting for our messages       */
     /* ---------------------------------------------------------------------- */
     sock_write.sin_family = AF_INET;    /* AF_INET = TCP Socket               */
-    sock_write.sin_port = htons(10400); /* Port Number to Publish             */
+    sock_write.sin_port = htons(10200); /* Port Number to Publish             */
     /* Address of the computer to connect to in the case of a client          */
     inet_aton("200.13.89.15", (struct in_addr *)&sock_write.sin_addr);
     memset(sock_write.sin_zero, 0, 8);   
@@ -141,5 +154,3 @@ int main()
     close(sfd);  
     return(0);
   }
-
-
