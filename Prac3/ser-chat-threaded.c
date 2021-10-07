@@ -47,6 +47,8 @@ struct data
 /* structure used to store the information of all the clients logged          */
 struct member
   {
+    int    alive;
+    int    to_be_killed;
     int    chat_id;                           /* chat id                      */
     char   alias[BUFFERSIZE-(sizeof(int)*2)]; /* member alias                 */
     struct sockaddr_in address;               /* address of the member        */
@@ -119,6 +121,20 @@ void *send_message(void *ptr)
       }
   }
 
+void *check_heartbeat(void* ptr)
+{
+  while (1)
+  {
+    if (part_list[*(int *) ptr].chat_id != -1 && part_list[*(int *) ptr].alive == 1 && part_list[*(int *) ptr].to_be_killed == 0)
+    {
+      part_list[*(int *) ptr].to_be_killed = 1;
+      sleep(30);
+      if (part_list[*(int *) ptr].to_be_killed == 1)
+        part_list[*(int *) ptr].alive = 0;
+    }
+  }
+}
+
   
 /* -------------------------------------------------------------------------- */
 /* main ()                                                                    */
@@ -140,13 +156,15 @@ int main()
     socklen_t lenght;                  /* size of the read socket             */
     int    iret1[MAX_THREADS];         /* thread return values                */
     pthread_t thread1[MAX_THREADS];    /* thread ids                          */
+    int    iret2[MAX_MEMBERS];
+    pthread_t thread2[MAX_MEMBERS];
 
 
     /* ---------------------------------------------------------------------- */
     /* structure of the socket that will read what comes from the client      */
     /* ---------------------------------------------------------------------- */
     sock_read.sin_family = AF_INET;    /* AF_INET = TCP Socket                */
-    sock_read.sin_port = htons(10200); /* Port Number to Publish              */
+    sock_read.sin_port = htons(10201); /* Port Number to Publish              */
     /* Address of the computer to connect to in the case of a client          */
     inet_aton("200.13.89.15", (struct in_addr *)&sock_read.sin_addr);
     memset(sock_read.sin_zero, 0, 8);   
@@ -164,7 +182,12 @@ int main()
     participants = 0;
     
     for (i=0; i<MAX_MEMBERS; ++i)      /* cleaning of participants list       */
+    {
       part_list[i].chat_id = -1;
+      part_list[i].alive = 0;
+      part_list[i].to_be_killed = 0;
+    }
+      
 
     for (i=0; i<MAX_MESSAGES; ++i)      /* cleaning of message queue          */
       queue[i].chat_id = -1;
@@ -175,6 +198,10 @@ int main()
     for (i=0; i<MAX_THREADS; ++i)
       iret1[i] = pthread_create( &(thread1[i]), NULL, send_message, (void *)(&sfd));     
     
+
+    for (i = 0; i < MAX_MEMBERS; i++)
+      iret2[i] = pthread_create( &(thread2[i]), NULL, check_heartbeat, (void *)(&i));  
+    
     /* ---------------------------------------------------------------------- */
     /* The  socket is  read and  the  messages are   answered  until the word */
     /* "shutdown" is received by a member of the chat                         */
@@ -182,6 +209,21 @@ int main()
     lenght = sizeof(struct sockaddr);
     while (strcmp(message.data_text,"shutdown") != 0)
       {
+        for (int i = 0; i < MAX_MEMBERS; i++)
+        {
+          if (part_list[i].alive == 0 && part_list[i].chat_id != -1 && part_list[i].to_be_killed == 1)
+          {
+            printf("Se encontro uno para matar\n");
+            sprintf(text1,"Client [%s] is leaving the chat room.",part_list[i].alias);
+            printf(text1);
+            part_list[i].chat_id = -1;
+            part_list[i].alive = 0;
+		        --participants;
+            message.chat_id = i;
+            strcpy(message.data_text,text1);
+
+          }
+        } 
         /* first we read the message sent from any client                     */
         read_char = recvfrom(sfd,(struct data *)&(message),sizeof(struct data),0,(struct sockaddr *)&(sock_write),&(lenght));
         printf("Type:[%d], Part:[%d], Mess:[%s]\n",message.data_type, message.chat_id, message.data_text);
@@ -196,13 +238,18 @@ int main()
             else
               {
                 part_list[i].chat_id = i;
+                part_list[i].alive = 1;
                 strcpy(part_list[i].alias, message.data_text);
                 memcpy((struct sockaddr_in *)&(part_list[i].address), (struct sockaddr_in *)&(sock_write), sizeof(struct sockaddr_in));  
                 ++ participants;              
               }
             sendto(sfd,(int *)&(i),sizeof(int),0,(struct sockaddr *)&(sock_write),sizeof(sock_write));      
           }
-
+        if (message.data_type == 2)
+        {
+          part_list[message.chat_id].to_be_killed = 0;
+        }
+        
         /* if data_type == 1, it means that this is a message                 */
         if (message.data_type == 1)
           {
@@ -213,8 +260,12 @@ int main()
               {
                 sprintf(text1,"Client [%s] is leaving the chat room.",part_list[message.chat_id].alias);
                 part_list[message.chat_id].chat_id = -1;
+                part_list[message.chat_id].alive = 0;
+                part_list[message.chat_id].to_be_killed = 0;
 		--participants;
               }
+            
+            
             else
               sprintf(text1,"[%s]:[%s]",part_list[message.chat_id].alias, message.data_text);
           

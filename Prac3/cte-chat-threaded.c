@@ -35,6 +35,14 @@ struct data
     char data_text[BUFFERSIZE-(sizeof(int)*2)];  /* data sent                 */
   };
 
+struct thread_args
+{
+  int sfd;
+  int chat_id;
+  struct sockaddr_in sock_write;
+};
+
+
 /* ------------------------------------------------------------------------- */
 /* print_message()                                                           */
 /*                                                                           */
@@ -58,20 +66,19 @@ void *print_message(void *ptr)
       }
 }
 
-void *send_heartbeat(int sfd, int chat_id, struct sockaddr_in sock_write)
+void *heartbeat_thread(void *ptr)
 {
   struct data message; 
 
-  message.chat_id = chat_id;
+  message.chat_id = ((struct thread_args *)ptr)->chat_id;
   strcpy(message.data_text,"( ͡° ͜ʖ ͡°)");
-  message.data_type = 1;
+  message.data_type = 2;
   while (1)
   {
-    sendto(sfd,(struct data *)&(message),sizeof(struct data),0,(struct sockaddr *)&(sock_write),sizeof(sock_write));
+    sendto(((struct thread_args *)ptr)->sfd,(struct data *)&(message),sizeof(struct data),0,(struct sockaddr *)&(((struct thread_args *)ptr)->sock_write),sizeof(((struct thread_args *)ptr)->sock_write));
     sleep(10);
   }    
 }
-
 /* -------------------------------------------------------------------------- */
 /* main ()                                                                    */
 /*                                                                            */
@@ -88,14 +95,17 @@ int main()
     int    sfd;                        /* socket descriptor                   */
     int    chat_id;                    /* identificator in the chat session   */
     int    iret1;                      /* thread return value                 */
+    int    iret2;
     pthread_t thread1;                 /* thread id                           */
+    pthread_t thread2;
+    struct thread_args args;
 
     /* ---------------------------------------------------------------------- */
     /* structure of the socket that the client will use to send information   */
     /* the IP address is the one of the server waiting for our messages       */
     /* ---------------------------------------------------------------------- */
     sock_write.sin_family = AF_INET;    /* AF_INET = TCP Socket               */
-    sock_write.sin_port = htons(10200); /* Port Number to Publish             */
+    sock_write.sin_port = htons(10201); /* Port Number to Publish             */
     /* Address of the computer to connect to in the case of a client          */
     inet_aton("200.13.89.15", (struct in_addr *)&sock_write.sin_addr);
     memset(sock_write.sin_zero, 0, 8);   
@@ -130,9 +140,13 @@ int main()
         return(0);
       } 
 
+
+     args.chat_id = chat_id;
+     args.sfd = sfd;
+     args.sock_write =sock_write;
      /* Creation of reading thread                                            */
      iret1 = pthread_create( &thread1, NULL, print_message, (void *)(&sfd));
-
+     iret2 = pthread_create( &thread2, NULL, heartbeat_thread,(void *)(&args));
     /* ---------------------------------------------------------------------- */
     /* text typed by the user isread and sent to the server.  The client then */
     /* waits for  an answer and  displays it. The  cycle  continues until the */
