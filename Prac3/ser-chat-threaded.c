@@ -124,16 +124,27 @@ void *send_message(void *ptr)
 void *check_heartbeat(void* ptr)
 {
   time_t t;
+  double difference;
+
   while (1)
   {
+    sleep(2);
     for (int i = 0; i < MAX_MEMBERS; i++)
     {
       time(&t);
-      if (difftime((time_t)ctime(&t),part_list[i].t) > 30)
+      if (part_list[i].chat_id != -1)
       {
-        
+        printf("el tiempo actual es %s\n", ctime(&t));
+        printf("el tiempo de el cliente es %s\n", part_list[i].t);
+        difference = 0;
+        difference = difftime(t, t);
+        printf("La diferencia de tiemo de %s es %lld\n", part_list[i].alias, difference);
       }
       
+      if (difftime((time_t)ctime(&t),part_list[i].t) > 30 && part_list[i].chat_id != -1)
+      {
+        printf("Somebody disconnected");
+      }   
     }
     
   }
