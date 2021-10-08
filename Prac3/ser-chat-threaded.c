@@ -160,8 +160,8 @@ int main()
     socklen_t lenght;                  /* size of the read socket             */
     int    iret1[MAX_THREADS];         /* thread return values                */
     pthread_t thread1[MAX_THREADS];    /* thread ids                          */
-    int    iret2[MAX_MEMBERS];
-    pthread_t thread2[MAX_MEMBERS];
+    int    iret2;
+    pthread_t thread2;
 
 
     /* ---------------------------------------------------------------------- */
@@ -200,9 +200,7 @@ int main()
     for (i=0; i<MAX_THREADS; ++i)
       iret1[i] = pthread_create( &(thread1[i]), NULL, send_message, (void *)(&sfd));     
     
-
-    for (i = 0; i < MAX_MEMBERS; i++)
-      iret2[i] = pthread_create( &(thread2[i]), NULL, check_heartbeat, (void *)(&i));  
+    iret2 = pthread_create( &(thread2), NULL, check_heartbeat, (void *)(&sfd));  
     
     /* ---------------------------------------------------------------------- */
     /* The  socket is  read and  the  messages are   answered  until the word */
