@@ -19,6 +19,7 @@
 #include <unistd.h>                    /* unix standard functions             */
 #include <string.h>                    /* text handling functions             */
 #include <pthread.h>                   /* libraries for thread handling       */
+#include <time.h>
 
 /* -------------------------------------------------------------------------- */
 /* global definitions                                                         */
@@ -68,13 +69,15 @@ void *print_message(void *ptr)
 
 void *heartbeat_thread(void *ptr)
 {
-  struct data message; 
+  time_t t;
+  struct data message;
 
   message.chat_id = ((struct thread_args *)ptr)->chat_id;
-  strcpy(message.data_text,"( ͡° ͜ʖ ͡°)");
   message.data_type = 2;
   while (1)
   {
+    time(&t);
+    strcpy(message.data_text,ctime(&t));
     sendto(((struct thread_args *)ptr)->sfd,(struct data *)&(message),sizeof(struct data),0,(struct sockaddr *)&(((struct thread_args *)ptr)->sock_write),sizeof(((struct thread_args *)ptr)->sock_write));
     sleep(10);
   }    
