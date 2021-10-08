@@ -76,8 +76,8 @@ void *heartbeat_thread(void *ptr)
   message.data_type = 2;
   while (1)
   {
-    time(&t);
-    strcpy(message.data_text,ctime(&t));
+    t = time(NULL);
+    memcpy(message.data_text, &t, sizeof(t));
     sendto(((struct thread_args *)ptr)->sfd,(struct data *)&(message),sizeof(struct data),0,(struct sockaddr *)&(((struct thread_args *)ptr)->sock_write),sizeof(((struct thread_args *)ptr)->sock_write));
     sleep(10);
   }    

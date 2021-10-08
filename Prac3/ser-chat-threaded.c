@@ -128,22 +128,12 @@ void *check_heartbeat(void* ptr)
 
   while (1)
   {
-    sleep(2);
     for (int i = 0; i < MAX_MEMBERS; i++)
     {
-      time(&t);
-      if (part_list[i].chat_id != -1)
+      t = time(NULL);
+      if (t - part_list[i].t >= 30 && part_list[i].chat_id != -1)
       {
-        printf("el tiempo actual es %s\n", ctime(&t));
-        printf("el tiempo de el cliente es %s\n", part_list[i].t);
-        difference = 0;
-        difference = difftime(t, t);
-        printf("La diferencia de tiemo de %s es %lld\n", part_list[i].alias, difference);
-      }
-      
-      if (difftime((time_t)ctime(&t),part_list[i].t) > 30 && part_list[i].chat_id != -1)
-      {
-        printf("Somebody disconnected");
+        
       }   
     }
     
@@ -242,7 +232,7 @@ int main()
           }
         if (message.data_type == 2)
         {
-          part_list[message.chat_id].t = (time_t)message.data_text;
+          memcpy(&part_list[message.chat_id].t, &message.data_text, sizeof(message.data_text));
         }
         
         /* if data_type == 1, it means that this is a message                 */
