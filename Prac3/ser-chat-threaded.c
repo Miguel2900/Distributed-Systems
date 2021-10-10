@@ -132,12 +132,12 @@ void *check_heartbeat(void* ptr)
     for (int i = 0; i < MAX_MEMBERS; i++)
     {
       t = time(NULL);
-      if (part_list[i].chat_id != -1)
-      if (t - part_list[i].t >= 30 && part_list[i].chat_id != -1)
+      /*If the participant time is grater or equal to 30 seconds, he will be disconnected*/
+      if ((t - part_list[i].t >= 30) && (part_list[i].chat_id != -1))
       {
-        printf("se fue %s\n", part_list[i].alias);
         part_list[i].chat_id = -1;
         sprintf(text1,"Client [%s] is leaving the chat room.",part_list[i].alias);
+        /*Notifying the other participants his departure*/
         for (int j = 0; j < MAX_MEMBERS; j++)
         {
           if ((j != i) && (part_list[j].chat_id != -1))
@@ -211,6 +211,7 @@ int main()
     for (i=0; i<MAX_THREADS; ++i)
       iret1[i] = pthread_create( &(thread1[i]), NULL, send_message, (void *)(&sfd));     
     
+    /*Creation of the thread to check heartbeats */
     iret2 = pthread_create( &(thread2), NULL, check_heartbeat, (void *)(&participants));  
     
     /* ---------------------------------------------------------------------- */
@@ -240,9 +241,10 @@ int main()
               }
             sendto(sfd,(int *)&(i),sizeof(int),0,(struct sockaddr *)&(sock_write),sizeof(sock_write));      
           }
+        /*If data type == 2, it means it's a heartbeat*/
         if (message.data_type == 2)
         {
-          memcpy(&part_list[message.chat_id].t, &message.data_text, sizeof(message.data_text));
+          memcpy(&part_list[message.chat_id].t, &message.data_text, sizeof(time_t));
         }
         
         /* if data_type == 1, it means that this is a message                 */
