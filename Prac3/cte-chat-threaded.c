@@ -67,6 +67,7 @@ void *print_message(void *ptr)
       }
 }
 
+/*Functions that sends every 10 seconds a heratbet to the server */
 void *heartbeat_thread(void *ptr)
 {
   time_t t;
@@ -149,6 +150,7 @@ int main()
      args.sock_write =sock_write;
      /* Creation of reading thread                                            */
      iret1 = pthread_create( &thread1, NULL, print_message, (void *)(&sfd));
+     /*Creation of heartbeat thread*/
      iret2 = pthread_create( &thread2, NULL, heartbeat_thread,(void *)(&args));
     /* ---------------------------------------------------------------------- */
     /* text typed by the user isread and sent to the server.  The client then */
