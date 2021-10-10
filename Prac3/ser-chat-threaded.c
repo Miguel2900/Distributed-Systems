@@ -125,18 +125,28 @@ void *check_heartbeat(void* ptr)
 {
   time_t t;
   double difference;
+  char text1[BUFFERSIZE];
 
   while (1)
   {
     for (int i = 0; i < MAX_MEMBERS; i++)
     {
       t = time(NULL);
+      if (part_list[i].chat_id != -1)
       if (t - part_list[i].t >= 30 && part_list[i].chat_id != -1)
       {
-        
-      }   
+        printf("se fue %s\n", part_list[i].alias);
+        part_list[i].chat_id = -1;
+        sprintf(text1,"Client [%s] is leaving the chat room.",part_list[i].alias);
+        for (int j = 0; j < MAX_MEMBERS; j++)
+        {
+          if ((j != i) && (part_list[j].chat_id != -1))
+            
+            sendto(sfd,text1,strlen(text1),0,(struct sockaddr *)&(part_list[j].address),sizeof(struct sockaddr_in));
+        }
+      }
     }
-    
+    sleep(1);
   }
 }
 
@@ -201,7 +211,7 @@ int main()
     for (i=0; i<MAX_THREADS; ++i)
       iret1[i] = pthread_create( &(thread1[i]), NULL, send_message, (void *)(&sfd));     
     
-    iret2 = pthread_create( &(thread2), NULL, check_heartbeat, (void *)(&sfd));  
+    iret2 = pthread_create( &(thread2), NULL, check_heartbeat, (void *)(&participants));  
     
     /* ---------------------------------------------------------------------- */
     /* The  socket is  read and  the  messages are   answered  until the word */
