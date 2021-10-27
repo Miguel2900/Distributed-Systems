@@ -63,17 +63,35 @@ struct msg
   char data_text[BUFFERSIZE - (sizeof(int) * 2)]; /* data sent                 */
 };
 
-/* -------------------------------------------------------------------------- */
-
 struct card
 {
+  int value;
+  char rank[3];
+  char suit[3];
+  int deck_id;
+};
 
-}
+struct deck
+{
+  struct card card;
+  int available;
+};
+
+struct player
+{
+  struct member member;
+  int game_id;
+};
+
+/* -------------------------------------------------------------------------- */
 /* global lists to be shared between all of the threads                       */
 struct member part_list[MAX_MEMBERS];                  /* list of members in room             */
 struct msg queue[MAX_MESSAGES];                        /* list of messages to process         */
 int sfd;                                               /* socket descriptor                   */
 pthread_mutex_t msg_mutex = PTHREAD_MUTEX_INITIALIZER; /* Mutual exclusion */
+int participants;                                      /* number of participats in the chat   */
+struct player players_list[4];
+int game_participants;
 
 /* -------------------------------------------------------------------------- */
 /* send_message()                                                             */
@@ -129,7 +147,6 @@ void *send_message(void *ptr)
 void *check_heartbeat(void *ptr)
 {
   time_t t;
-  double difference;
   char text1[BUFFERSIZE];
 
   while (1)
@@ -155,6 +172,69 @@ void *check_heartbeat(void *ptr)
   }
 }
 
+void *card_game(void *ptr)
+{
+  time_t t;
+  struct deck deck[52];
+  int i;
+  int result;
+  int game_running = 0;
+
+  for (i = 0; i < 52; i++)
+  {
+    deck[i].available = 0;
+    deck[i].card.deck_id = i;
+
+    result = i % 13 + 1;
+
+    deck[i].card.value = result;
+    if (result == 1)
+      strcpy(deck[i].card.rank, "A");
+    else if (result == 11)
+      strcpy(deck[i].card.rank, "J");
+    else if (result == 12)
+      strcpy(deck[i].card.rank, "Q");
+    else if (result == 13)
+      strcpy(deck[i].card.rank, "K");
+    else
+      sprintf(deck[i].card.rank, "%d", result);
+
+    result = i / 13;
+    if (result == 0)
+      strcpy(deck[i].card.suit, "♥");
+    else if (result == 1)
+      strcpy(deck[i].card.suit, "♦");
+    else if (result == 2)
+      strcpy(deck[i].card.suit, "♣");
+    else
+      strcpy(deck[i].card.suit, "♠");
+  }
+
+  for (i = 0; i < 52; i++)
+  {
+    printf("|v: %d r: %s s: %s|", deck[i].card.value, deck[i].card.rank, deck[i].card.suit);
+    if (i % 13 == 12)
+      printf("\n");
+  }
+
+  while (1)
+  {
+    if (game_participants >= 1 && game_running == 0)
+      game_running == 1;
+
+    if (game_participants == 0 && game_running == 1)
+    {
+      for (i = 0; i < 52; i++)
+      {
+        if (i <= 4)
+          players_list[i].game_id = -1;
+        deck[i].available = 0;
+      }
+      game_running = 0;
+    }
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* main ()                                                                    */
 /*                                                                            */
@@ -166,7 +246,6 @@ int main()
   struct sockaddr_in sock_write; /* structure for the write socket      */
   struct data message;           /* message to sendto the server        */
   char text1[BUFFERSIZE];        /* reading buffer                      */
-  int participants;              /* number of participats in the chat   */
   int i;                         /* counter                             */
   int freespot;                  /* flag that marks an open queue spot  */
 
@@ -177,6 +256,8 @@ int main()
   pthread_t thread1[MAX_THREADS]; /* thread ids                          */
   int iret2;
   pthread_t thread2;
+  int iret3;
+  pthread_t thread3;
 
   /* ---------------------------------------------------------------------- */
   /* structure of the socket that will read what comes from the client      */
@@ -198,6 +279,7 @@ int main()
   /* ---------------------------------------------------------------------- */
   message.data_text[0] = '\0';
   participants = 0;
+  game_participants = 0;
 
   for (i = 0; i < MAX_MEMBERS; ++i) /* cleaning of participants list       */
   {
@@ -207,6 +289,11 @@ int main()
   for (i = 0; i < MAX_MESSAGES; ++i) /* cleaning of message queue          */
     queue[i].chat_id = -1;
 
+  for (i = 0; i < 4; i++)
+  {
+    players_list[i].game_id = -1;
+  }
+
   /* ---------------------------------------------------------------------- */
   /* Creation of thread pool that will check for new mssages to process     */
   /* ---------------------------------------------------------------------- */
@@ -215,6 +302,8 @@ int main()
 
   /*Creation of the thread to check heartbeats */
   iret2 = pthread_create(&(thread2), NULL, check_heartbeat, (void *)(&participants));
+
+  iret3 = pthread_create(&(thread3), NULL, card_game, (void *)(&participants));
 
   /* ---------------------------------------------------------------------- */
   /* The  socket is  read and  the  messages are   answered  until the word */
