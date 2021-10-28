@@ -163,7 +163,6 @@ void *check_heartbeat(void *ptr)
         for (int j = 0; j < MAX_MEMBERS; j++)
         {
           if ((j != i) && (part_list[j].chat_id != -1))
-
             sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(part_list[j].address), sizeof(struct sockaddr_in));
         }
       }
@@ -221,6 +220,15 @@ void *card_game(void *ptr)
   {
     if (game_participants >= 1 && game_running == 0)
       game_running == 1;
+
+    if (game_participants >= 1 && game_running == 1)
+    {
+      t = time(NULL);
+      if (game_participants == 1)
+      {
+        //incluir
+      }
+    }
 
     if (game_participants == 0 && game_running == 1)
     {
