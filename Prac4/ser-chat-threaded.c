@@ -31,6 +31,10 @@
 #define MAX_MEMBERS 20   /* maximum number of members in room   */
 #define MAX_MESSAGES 100 /* maximum number of mesgs in queue    */
 #define MAX_THREADS 5    /* maximum number of threads in pool   */
+#define MAX_PLAYERS 4
+#define MAX_CARDS_HAND 5
+#define MAX_CARDS_DECK 52
+#define STRING_SIZE 3
 
 /* -------------------------------------------------------------------------- */
 /* global variables and structures                                            */
@@ -66,8 +70,8 @@ struct msg
 struct card
 {
   int value;
-  char rank[3];
-  char suit[3];
+  char rank[STRING_SIZE];
+  char suit[STRING_SIZE];
   int deck_id;
 };
 
@@ -79,6 +83,7 @@ struct deck
 
 struct player
 {
+  struct deck hand[MAX_CARDS_HAND];
   struct member member;
   int game_id;
 };
@@ -159,6 +164,7 @@ void *check_heartbeat(void *ptr)
       {
         part_list[i].chat_id = -1;
         sprintf(text1, "Client [%s] is leaving the chat room.", part_list[i].alias);
+        participants--;
         /*Notifying the other participants his departure*/
         for (int j = 0; j < MAX_MEMBERS; j++)
         {
@@ -174,12 +180,12 @@ void *check_heartbeat(void *ptr)
 void *card_game(void *ptr)
 {
   time_t t;
-  struct deck deck[52];
+  struct deck deck[MAX_CARDS_DECK];
   int i;
   int result;
   int game_running = 0;
 
-  for (i = 0; i < 52; i++)
+  for (i = 0; i < MAX_CARDS_DECK; i++)
   {
     deck[i].available = 0;
     deck[i].card.deck_id = i;
@@ -209,7 +215,7 @@ void *card_game(void *ptr)
       strcpy(deck[i].card.suit, "♠");
   }
 
-  for (i = 0; i < 52; i++)
+  for (i = 0; i < MAX_CARDS_DECK; i++)
   {
     printf("|v: %d r: %s s: %s|", deck[i].card.value, deck[i].card.rank, deck[i].card.suit);
     if (i % 13 == 12)
@@ -226,7 +232,6 @@ void *card_game(void *ptr)
       t = time(NULL);
       if (game_participants == 1)
       {
-        //incluir
       }
     }
 
@@ -234,12 +239,13 @@ void *card_game(void *ptr)
     {
       for (i = 0; i < 52; i++)
       {
-        if (i <= 4)
+        if (i < MAX_PLAYERS)
           players_list[i].game_id = -1;
         deck[i].available = 0;
       }
       game_running = 0;
     }
+    sleep(1);
   }
 }
 
@@ -297,7 +303,7 @@ int main()
   for (i = 0; i < MAX_MESSAGES; ++i) /* cleaning of message queue          */
     queue[i].chat_id = -1;
 
-  for (i = 0; i < 4; i++)
+  for (i = 0; i < MAX_PLAYERS; i++)
   {
     players_list[i].game_id = -1;
   }
@@ -343,10 +349,28 @@ int main()
     }
     /*If data type == 2, it means it's a heartbeat*/
     if (message.data_type == 2)
-    {
       memcpy(&part_list[message.chat_id].t, &message.data_text, sizeof(time_t));
-    }
 
+    if (message.data_type == 3)
+    {
+      if (strcmp(message.data_text, "Start game") == 0)
+      {
+        i = 0;
+        while ((players_list[i].game_id != -1) && (i < MAX_PLAYERS))
+          ++i;
+        if (i < MAX_PLAYERS)
+        {
+          players_list[i].game_id = i;
+          players_list[i].member = part_list[message.chat_id];
+          game_participants++;
+        }
+        else
+        {
+          strcpy(text1, "Client could not join. Too many players");
+          sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(part_list[message.chat_id].address), sizeof(struct sockaddr_in));
+        }
+      }
+    }
     /* if data_type == 1, it means that this is a message                 */
     if (message.data_type == 1)
     {
