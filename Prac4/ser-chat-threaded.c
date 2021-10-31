@@ -23,6 +23,7 @@
 #include <string.h>     /* text handling functions             */
 #include <pthread.h>    /* libraries for thread handling       */
 #include <time.h>
+#include <stdlib.h>
 
 /* -------------------------------------------------------------------------- */
 /* global definitions                                                         */
@@ -35,6 +36,7 @@
 #define MAX_CARDS_HAND 5
 #define MAX_CARDS_DECK 52
 #define STRING_SIZE 3
+#define MAX_ROUNDS 5
 
 /* -------------------------------------------------------------------------- */
 /* global variables and structures                                            */
@@ -56,6 +58,7 @@ struct member
   int chat_id;                                /* chat id                      */
   char alias[BUFFERSIZE - (sizeof(int) * 2)]; /* member alias                 */
   struct sockaddr_in address;                 /* address of the member        */
+  int game_id;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -65,6 +68,7 @@ struct msg
 {
   int chat_id;
   char data_text[BUFFERSIZE - (sizeof(int) * 2)]; /* data sent                 */
+  int deck_id;
 };
 
 struct card
@@ -86,6 +90,8 @@ struct player
   struct deck hand[MAX_CARDS_HAND];
   struct member member;
   int game_id;
+  int card_chosen;
+  int points;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -97,6 +103,7 @@ pthread_mutex_t msg_mutex = PTHREAD_MUTEX_INITIALIZER; /* Mutual exclusion */
 int participants;                                      /* number of participats in the chat   */
 struct player players_list[4];
 int game_participants;
+struct deck deck[MAX_CARDS_DECK];
 
 /* -------------------------------------------------------------------------- */
 /* send_message()                                                             */
@@ -106,6 +113,13 @@ int game_participants;
 /* void *ptr  - pointer that will receive the parameters for the thread       */
 /*                                                                            */
 /* -------------------------------------------------------------------------- */
+
+void deal_cards(int game_id);
+void return_cards(int game_id);
+void ins_in_queue(struct data message, char text1[BUFFERSIZE]);
+void show_available_cards(int game_id);
+void reset_players();
+
 void *send_message(void *ptr)
 {
   int c_i;            /* counter variable                    */
@@ -131,6 +145,7 @@ void *send_message(void *ptr)
     {
       /* copy the mssage from the queue to the local struture           */
       memcpy((struct msg *)&chatmsg, (struct msg *)&queue[c_i], sizeof(struct msg));
+
       /* change cha_id to -1 to make this record free again             */
       queue[c_i].chat_id = -1;
     }
@@ -163,8 +178,16 @@ void *check_heartbeat(void *ptr)
       if ((t - part_list[i].t >= 30) && (part_list[i].chat_id != -1))
       {
         part_list[i].chat_id = -1;
-        sprintf(text1, "Client [%s] is leaving the chat room.", part_list[i].alias);
         participants--;
+
+        if (part_list[i].game_id != -1)
+        {
+          return_cards(part_list[i].game_id);
+          players_list[part_list[i].game_id].game_id = -1;
+          part_list[i].game_id = -1;
+          game_participants--;
+        }
+        sprintf(text1, "Client [%s] is leaving the chat room.", part_list[i].alias);
         /*Notifying the other participants his departure*/
         for (int j = 0; j < MAX_MEMBERS; j++)
         {
@@ -179,11 +202,15 @@ void *check_heartbeat(void *ptr)
 
 void *card_game(void *ptr)
 {
-  time_t t;
-  struct deck deck[MAX_CARDS_DECK];
-  int i;
+  time_t t1, t2;
+  int i, j;
   int result;
+  int winner;
+  int draw;
+  int game_winner;
+  int players_ready = 0;
   int game_running = 0;
+  char text1[BUFFERSIZE];
 
   for (i = 0; i < MAX_CARDS_DECK; i++)
   {
@@ -225,27 +252,209 @@ void *card_game(void *ptr)
   while (1)
   {
     if (game_participants >= 1 && game_running == 0)
-      game_running == 1;
+    {
+      printf("Starting game\n");
+      game_running = 1;
+      t1 = time(NULL);
+    }
 
     if (game_participants >= 1 && game_running == 1)
     {
-      t = time(NULL);
-      if (game_participants == 1)
+      t2 = time(NULL);
+      if (game_participants == 1 && (t2 - t1) >= 30)
       {
+        sprintf(text1, "Not enough players to start game");
+        printf("%s\n", text1);
+        sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[i].member.address), sizeof(struct sockaddr_in));
+        reset_players();
+      }
+      if (game_participants > 1)
+      {
+        while (game_running == 1 && game_participants > 0)
+        {
+          for (j = 0; j < MAX_ROUNDS && game_participants > 0; j++)
+          {
+            while (players_ready < game_participants && game_participants > 0)
+            {
+              players_ready = 0;
+              for (i = 0; i < MAX_PLAYERS; i++)
+              {
+                if (players_list[i].card_chosen != -1)
+                  players_ready++;
+              }
+            }
+
+            result = 0;
+            draw = 0;
+            for (i = 0; i < MAX_PLAYERS; i++)
+            {
+              if (players_list[i].card_chosen >= result && players_list[i].game_id != -1)
+              {
+                winner = i;
+                result = players_list[i].card_chosen;
+              }
+            }
+            for (i = 0; i < MAX_PLAYERS; i++)
+            {
+              if (players_list[i].card_chosen == result && players_list[i].game_id != -1)
+                draw++;
+              players_list[i].card_chosen = -1;
+            }
+            if (draw > 1)
+              sprintf(text1, "It's a draw between %d players", draw);
+            else
+            {
+              players_list[winner].points++;
+              sprintf(text1, "Round winner: %s", players_list[winner].member.alias);
+            }
+            for (i = 0; i < MAX_PLAYERS; i++)
+            {
+              if (players_list[i].game_id != -1)
+              {
+                printf("Player: %s Points: %d", players_list[i].member.alias, players_list[i].points);
+                sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[i].member.address), sizeof(struct sockaddr_in));
+              }
+            }
+
+            players_ready = 0;
+          }
+
+          result = 0;
+          draw = 0;
+          for (i = 0; i < MAX_PLAYERS; i++)
+          {
+            if (players_list[i].points >= result && players_list[i].game_id != -1)
+            {
+              winner = i;
+              result = players_list[i].points;
+            }
+          }
+          for (i = 0; i < MAX_PLAYERS; i++)
+          {
+            if (players_list[i].points == result && players_list[i].game_id != -1)
+              draw++;
+            players_list[i].points = 0;
+          }
+          if (draw > 1)
+            sprintf(text1, "It's a draw between %d players", draw);
+          else
+            sprintf(text1, "Game winner: %s", players_list[winner].member.alias);
+          for (i = 0; i < MAX_PLAYERS; i++)
+          {
+            if (players_list[i].game_id != -1)
+              sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[i].member.address), sizeof(struct sockaddr_in));
+          }
+          reset_players();
+        }
       }
     }
 
     if (game_participants == 0 && game_running == 1)
-    {
-      for (i = 0; i < 52; i++)
-      {
-        if (i < MAX_PLAYERS)
-          players_list[i].game_id = -1;
-        deck[i].available = 0;
-      }
       game_running = 0;
-    }
     sleep(1);
+  }
+}
+
+void deal_cards(int game_id)
+{
+  int random;
+
+  for (int i = 0; i < MAX_CARDS_HAND; i++)
+  {
+    while (1)
+    {
+      random = rand() % MAX_CARDS_DECK;
+      if (deck[random].available == 0)
+        break;
+    }
+    players_list[game_id].hand[i].card = deck[random].card;
+    players_list[game_id].hand[i].available = 0;
+    deck[random].available = 1;
+  }
+  show_available_cards(game_id);
+}
+
+void show_available_cards(int game_id)
+{
+  char text1[BUFFERSIZE];
+  sprintf(text1, "-----------------------------------------------------");
+  sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[game_id].member.address), sizeof(struct sockaddr_in));
+  for (int i = 0; i < MAX_CARDS_HAND; i++)
+  {
+    if (players_list[game_id].hand[i].available == 0)
+    {
+      sprintf(text1, "%d: |%s %s|", i + 1, players_list[game_id].hand[i].card.rank, players_list[game_id].hand[i].card.suit);
+      sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[game_id].member.address), sizeof(struct sockaddr_in));
+    }
+  }
+  sprintf(text1, "Choose a card with his id:");
+  sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[game_id].member.address), sizeof(struct sockaddr_in));
+}
+
+void return_cards(int game_id)
+{
+  for (int i = 0; i < MAX_CARDS_HAND; i++)
+    deck[players_list[game_id].hand[i].card.deck_id].available = 0;
+}
+
+void reset_players()
+{
+  game_participants = 0;
+  for (int i = 0; i < MAX_PLAYERS; i++)
+  {
+    if (players_list[i].game_id != -1)
+      return_cards(players_list[i].game_id);
+    players_list[i].game_id = -1;
+    players_list[i].card_chosen = -1;
+    players_list[i].points = 0;
+  }
+}
+
+void ins_in_queue(struct data message, char text1[BUFFERSIZE])
+{
+  /* insert  the new message and  originator client  in the message */
+  /* queue                                                          */
+
+  /* first we find an empty  spot for the next  message. if we find */
+  /* it, we put  a copy of the  message there, if  we don't we only */
+  /* un-block the queue and try again later                         */
+  int i;
+  int freespot = 0; /* flag that marks an open queue spot  */
+
+  while (freespot == 0)
+  {
+    /* --- block message queue --- */
+    pthread_mutex_lock(&msg_mutex);
+    printf("Main Bloqueando mutex\n");
+
+    for (i = 0; i < MAX_MESSAGES; ++i)
+      if (queue[i].chat_id == -1)
+      {
+        freespot = 1;
+        break;
+      }
+    if (freespot == 1)
+    {
+      queue[i].chat_id = message.chat_id;
+      if (message.data_type == 3)
+      {
+        queue[i].deck_id = players_list[part_list[message.chat_id].game_id].hand[atoi(text1) - 1].card.deck_id;
+        players_list[part_list[message.chat_id].game_id].hand[atoi(text1) - 1].available = 1;
+        players_list[part_list[message.chat_id].game_id].card_chosen = players_list[part_list[message.chat_id].game_id].hand[atoi(text1) - 1].card.value;
+        show_available_cards(part_list[message.chat_id].game_id);
+        sprintf(text1, "[%s]:%s %s", part_list[message.chat_id].alias, deck[queue[i].deck_id].card.rank, deck[queue[i].deck_id].card.suit);
+      }
+      else
+        queue[i].deck_id = -1;
+      strcpy(queue[i].data_text, text1);
+      printf("Message located in position [%d]\n", i);
+      printf("queue[%d].chat_id=[%d]\n", i, queue[i].chat_id);
+      printf("queue[%d].data_text=[%s]\n", i, queue[i].data_text);
+    }
+
+    /* --- unblock message queue --- */
+    pthread_mutex_unlock(&msg_mutex);
+    printf("Main Desbloqueando mutex\n");
   }
 }
 
@@ -261,7 +470,6 @@ int main()
   struct data message;           /* message to sendto the server        */
   char text1[BUFFERSIZE];        /* reading buffer                      */
   int i;                         /* counter                             */
-  int freespot;                  /* flag that marks an open queue spot  */
 
   int sfd_in;                     /* socket descriptor for read port     */
   int read_char;                  /* read characters                     */
@@ -272,6 +480,8 @@ int main()
   pthread_t thread2;
   int iret3;
   pthread_t thread3;
+
+  srand(time(NULL));
 
   /* ---------------------------------------------------------------------- */
   /* structure of the socket that will read what comes from the client      */
@@ -298,6 +508,7 @@ int main()
   for (i = 0; i < MAX_MEMBERS; ++i) /* cleaning of participants list       */
   {
     part_list[i].chat_id = -1;
+    part_list[i].game_id = -1;
   }
 
   for (i = 0; i < MAX_MESSAGES; ++i) /* cleaning of message queue          */
@@ -306,6 +517,8 @@ int main()
   for (i = 0; i < MAX_PLAYERS; i++)
   {
     players_list[i].game_id = -1;
+    players_list[i].card_chosen = -1;
+    players_list[i].points = 0;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -358,17 +571,25 @@ int main()
         i = 0;
         while ((players_list[i].game_id != -1) && (i < MAX_PLAYERS))
           ++i;
+
         if (i < MAX_PLAYERS)
         {
+          part_list[message.chat_id].game_id = i;
           players_list[i].game_id = i;
           players_list[i].member = part_list[message.chat_id];
           game_participants++;
+          deal_cards(i);
         }
         else
         {
           strcpy(text1, "Client could not join. Too many players");
           sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(part_list[message.chat_id].address), sizeof(struct sockaddr_in));
         }
+      }
+      else
+      {
+        sprintf(text1, "%s", message.data_text);
+        ins_in_queue(message, text1);
       }
     }
     /* if data_type == 1, it means that this is a message                 */
@@ -382,43 +603,20 @@ int main()
         sprintf(text1, "Client [%s] is leaving the chat room.", part_list[message.chat_id].alias);
         part_list[message.chat_id].chat_id = -1;
         --participants;
+
+        if (part_list[message.chat_id].game_id != -1)
+        {
+          return_cards(part_list[message.chat_id].game_id);
+          players_list[part_list[message.chat_id].game_id].game_id = -1;
+          part_list[message.chat_id].game_id = -1;
+          game_participants--;
+        }
       }
 
       else
         sprintf(text1, "[%s]:[%s]", part_list[message.chat_id].alias, message.data_text);
 
-      /* insert  the new message and  originator client  in the message */
-      /* queue                                                          */
-
-      /* first we find an empty  spot for the next  message. if we find */
-      /* it, we put  a copy of the  message there, if  we don't we only */
-      /* un-block the queue and try again later                         */
-      freespot = 0;
-      while (freespot == 0)
-      {
-        /* --- block message queue --- */
-        pthread_mutex_lock(&msg_mutex);
-        printf("Main Bloqueando mutex\n");
-
-        for (i = 0; i < MAX_MESSAGES; ++i)
-          if (queue[i].chat_id == -1)
-          {
-            freespot = 1;
-            break;
-          }
-        if (freespot == 1)
-        {
-          queue[i].chat_id = message.chat_id;
-          strcpy(queue[i].data_text, text1);
-          printf("Message located in position [%d]\n", i);
-          printf("queue[%d].chat_id=[%d]\n", i, queue[i].chat_id);
-          printf("queue[%d].data_text=[%s]\n", i, queue[i].data_text);
-        }
-
-        /* --- unblock message queue --- */
-        pthread_mutex_unlock(&msg_mutex);
-        printf("Main Desbloqueando mutex\n");
-      }
+      ins_in_queue(message, text1);
     }
   }
   close(sfd);

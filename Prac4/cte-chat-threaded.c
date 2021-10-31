@@ -43,6 +43,7 @@ struct thread_args
   struct sockaddr_in sock_write;
 };
 
+int game_mode;
 /* ------------------------------------------------------------------------- */
 /* print_message()                                                           */
 /*                                                                           */
@@ -62,6 +63,8 @@ void *print_message(void *ptr)
   {
     read_char = recvfrom(*sock_desc, text1, BUFFERSIZE, 0, NULL, NULL);
     text1[read_char] = '\0';
+    if (strcmp(text1, "Not enough players to start game") == 0)
+      game_mode = 0;
     printf("%s\n", text1);
   }
 }
@@ -156,17 +159,27 @@ int main()
   /* waits for  an answer and  displays it. The  cycle  continues until the */
   /* word "exit" is written.                                                */
   /* ---------------------------------------------------------------------- */
+  game_mode = 0;
   while ((strcmp(message.data_text, "exit") != 0) && (strcmp(message.data_text, "shutdown") != 0))
   {
     printf("$ ");
 
     /* assembling of the message to send                                  */
-    message.data_type = 1; /* data_type 1 is used to send message */
     fgets(message.data_text, BUFFERSIZE - (sizeof(int) * 2), stdin);
     for (auxptr = message.data_text; *auxptr != '\n'; ++auxptr)
       ;
     *auxptr = '\0';
     message.chat_id = chat_id;
+
+    if (game_mode == 1 && strcmp(message.data_text, "exit") != 0)
+      message.data_type = 3;
+    else
+      message.data_type = 1; /* data_type 1 is used to send message */
+    if (strcmp(message.data_text, "Start game") == 0)
+    {
+      message.data_type = 3;
+      game_mode = 1;
+    }
 
     sendto(sfd, (struct data *)&(message), sizeof(struct data), 0, (struct sockaddr *)&(sock_write), sizeof(sock_write));
   }
