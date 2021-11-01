@@ -54,11 +54,11 @@ struct data
 /* structure used to store the information of all the clients logged          */
 struct member
 {
-  time_t t;
+  time_t t;                                   /* time of the memeber          */
   int chat_id;                                /* chat id                      */
   char alias[BUFFERSIZE - (sizeof(int) * 2)]; /* member alias                 */
   struct sockaddr_in address;                 /* address of the member        */
-  int game_id;
+  int game_id;                                /* game id                      */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -66,32 +66,37 @@ struct member
 /* processed                                                                  */
 struct msg
 {
-  int chat_id;
-  char data_text[BUFFERSIZE - (sizeof(int) * 2)]; /* data sent                 */
-  int deck_id;
+  int chat_id;                                    /* chat id                  */
+  char data_text[BUFFERSIZE - (sizeof(int) * 2)]; /* data sent                */
+  int deck_id;                                    /* deck id                  */
 };
 
+/* -------------------------------------------------------------------------- */
+/* structure used to save card info such as rank, numeric value, suit and his */
+/* positon on the deck                                                        */
 struct card
 {
-  int value;
-  char rank[STRING_SIZE];
-  char suit[STRING_SIZE];
-  int deck_id;
+  int value;              /* numeric value                */
+  char rank[STRING_SIZE]; /* card rank                    */
+  char suit[STRING_SIZE]; /* card suit                    */
+  int deck_id;            /* deck id                      */
 };
 
+/* -------------------------------------------------------------------------- */
+/* structure used to make the card deck                                       */
 struct deck
 {
-  struct card card;
-  int available;
+  struct card card; /* card                         */
+  int available;    /* availability of the card     */
 };
 
 struct player
 {
-  struct deck hand[MAX_CARDS_HAND];
-  struct member member;
-  int game_id;
-  int card_chosen;
-  int points;
+  struct deck hand[MAX_CARDS_HAND]; /* player hand                  */
+  struct member member;             /* player chat member           */
+  int game_id;                      /* game id                      */
+  int card_chosen;                  /* card chosen in the round     */
+  int points;                       /* player points                */
 };
 
 /* -------------------------------------------------------------------------- */
@@ -99,11 +104,31 @@ struct player
 struct member part_list[MAX_MEMBERS];                  /* list of members in room             */
 struct msg queue[MAX_MESSAGES];                        /* list of messages to process         */
 int sfd;                                               /* socket descriptor                   */
-pthread_mutex_t msg_mutex = PTHREAD_MUTEX_INITIALIZER; /* Mutual exclusion */
+pthread_mutex_t msg_mutex = PTHREAD_MUTEX_INITIALIZER; /* Mutual exclusion                    */
 int participants;                                      /* number of participats in the chat   */
-struct player players_list[4];
-int game_participants;
-struct deck deck[MAX_CARDS_DECK];
+struct player players_list[4];                         /* list of players in game             */
+int game_participants;                                 /* number of players in the game       */
+struct deck deck[MAX_CARDS_DECK];                      /* card deck                           */
+int game_end;                                          /* flag of the game's end              */
+
+/* -------------------------------------------------------------------------- */
+/* this function will deal cards to a player                                  */
+void deal_cards(int game_id);
+/* -------------------------------------------------------------------------- */
+/* this function will return and make available player's cards                */
+void return_cards(int game_id);
+/* -------------------------------------------------------------------------- */
+/* this function will insert a meessage into the queue                        */
+void ins_in_queue(struct data message, char text1[BUFFERSIZE]);
+/* -------------------------------------------------------------------------- */
+/* this fucntion will send the player his available cards                     */
+void show_available_cards(int game_id);
+/* -------------------------------------------------------------------------- */
+/* this function will reset all players, in order to finish the game appropriately*/
+void reset_players();
+/* -------------------------------------------------------------------------- */
+/* this function will reset the game, to play a new round                     */
+void reset_game();
 
 /* -------------------------------------------------------------------------- */
 /* send_message()                                                             */
@@ -113,13 +138,6 @@ struct deck deck[MAX_CARDS_DECK];
 /* void *ptr  - pointer that will receive the parameters for the thread       */
 /*                                                                            */
 /* -------------------------------------------------------------------------- */
-
-void deal_cards(int game_id);
-void return_cards(int game_id);
-void ins_in_queue(struct data message, char text1[BUFFERSIZE]);
-void show_available_cards(int game_id);
-void reset_players();
-
 void *send_message(void *ptr)
 {
   int c_i;            /* counter variable                    */
@@ -164,6 +182,9 @@ void *send_message(void *ptr)
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* check_heartbeat()                                                          */
+/* this function checks if a memeber has sent a heartbeat                     */
 void *check_heartbeat(void *ptr)
 {
   time_t t;
@@ -200,26 +221,33 @@ void *check_heartbeat(void *ptr)
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* card_game()                                                                */
+/* this function will run and control the card game                           */
 void *card_game(void *ptr)
 {
-  time_t t1, t2;
-  int i, j;
-  int result;
-  int winner;
-  int draw;
-  int game_winner;
-  int players_ready = 0;
-  int game_running = 0;
-  char text1[BUFFERSIZE];
+  time_t t1, t2;                             /* two time variables to measure time           */
+  int i, j;                                  /* variables for cycles                         */
+  int result;                                /* stores results                               */
+  int winner;                                /* saves the winner position                    */
+  int draw;                                  /* counter to check if there is a draw          */
+  int players_ready = 0;                     /* counter to check how many players are ready  */
+  int game_running = 0;                      /* flag to check if game is running             */
+  char text1[BUFFERSIZE], text2[BUFFERSIZE]; /* strings to send messages                     */
 
+  /* cycle to fill the card deck          */
   for (i = 0; i < MAX_CARDS_DECK; i++)
   {
     deck[i].available = 0;
     deck[i].card.deck_id = i;
 
+    /* this operation returns the column number if the deck is considered as a matrix */
     result = i % 13 + 1;
 
-    deck[i].card.value = result;
+    deck[i].card.value = result; /* stores the numeric value of the card     */
+
+    /* the poker deck doesn't have 1, 11, 12 or 13 ranks, it's necessary to change    */
+    /* those values into the corresponding letter rank A, J, Q or K respectively      */
     if (result == 1)
       strcpy(deck[i].card.rank, "A");
     else if (result == 11)
@@ -231,6 +259,8 @@ void *card_game(void *ptr)
     else
       sprintf(deck[i].card.rank, "%d", result);
 
+    /* there are 4 suits in poker, and each of them has 13 cards, here is saved the   */
+    /*  suit of each card                                                             */
     result = i / 13;
     if (result == 0)
       strcpy(deck[i].card.suit, "♥");
@@ -242,15 +272,11 @@ void *card_game(void *ptr)
       strcpy(deck[i].card.suit, "♠");
   }
 
-  for (i = 0; i < MAX_CARDS_DECK; i++)
-  {
-    printf("|v: %d r: %s s: %s|", deck[i].card.value, deck[i].card.rank, deck[i].card.suit);
-    if (i % 13 == 12)
-      printf("\n");
-  }
-
+  game_end = 0;
   while (1)
   {
+    /* if there is one or more participants and the game hasn't started, the game     */
+    /* starts and the time is stored                                                  */
     if (game_participants >= 1 && game_running == 0)
     {
       printf("Starting game\n");
@@ -261,6 +287,9 @@ void *card_game(void *ptr)
     if (game_participants >= 1 && game_running == 1)
     {
       t2 = time(NULL);
+
+      /* if there is only one participant and has been alone for more than 30 seconds */
+      /* the game is finished                                                         */
       if (game_participants == 1 && (t2 - t1) >= 30)
       {
         sprintf(text1, "Not enough players to start game");
@@ -268,22 +297,27 @@ void *card_game(void *ptr)
         sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[i].member.address), sizeof(struct sockaddr_in));
         reset_players();
       }
+
       if (game_participants > 1)
       {
         while (game_running == 1 && game_participants > 0)
         {
+          /* cycle to make the game last 5 rounds, to make players use all their cards*/
           for (j = 0; j < MAX_ROUNDS && game_participants > 0; j++)
           {
+
+            /* cycle to wait for players to choose a card   */
             while (players_ready < game_participants && game_participants > 0)
             {
               players_ready = 0;
               for (i = 0; i < MAX_PLAYERS; i++)
               {
-                if (players_list[i].card_chosen != -1)
+                if (players_list[i].card_chosen != -1 && part_list[i].game_id != -1)
                   players_ready++;
               }
             }
 
+            /* gets the highest value from the chosen cards and the player's game_id   */
             result = 0;
             draw = 0;
             for (i = 0; i < MAX_PLAYERS; i++)
@@ -294,12 +328,16 @@ void *card_game(void *ptr)
                 result = players_list[i].card_chosen;
               }
             }
+
+            /* counts if there are multiple cards with a value equal to the highest    */
+            /* value amongst the chosen cards to check if there is a draw              */
             for (i = 0; i < MAX_PLAYERS; i++)
             {
               if (players_list[i].card_chosen == result && players_list[i].game_id != -1)
                 draw++;
               players_list[i].card_chosen = -1;
             }
+
             if (draw > 1)
               sprintf(text1, "It's a draw between %d players", draw);
             else
@@ -307,18 +345,18 @@ void *card_game(void *ptr)
               players_list[winner].points++;
               sprintf(text1, "Round winner: %s", players_list[winner].member.alias);
             }
+
+            /* notifies the players the result of the round  */
             for (i = 0; i < MAX_PLAYERS; i++)
             {
               if (players_list[i].game_id != -1)
-              {
-                printf("Player: %s Points: %d", players_list[i].member.alias, players_list[i].points);
                 sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[i].member.address), sizeof(struct sockaddr_in));
-              }
             }
 
             players_ready = 0;
           }
 
+          /* gets the highest point score  */
           result = 0;
           draw = 0;
           for (i = 0; i < MAX_PLAYERS; i++)
@@ -329,28 +367,74 @@ void *card_game(void *ptr)
               result = players_list[i].points;
             }
           }
+          /* counts if there are multiple players with the highest score  */
           for (i = 0; i < MAX_PLAYERS; i++)
           {
             if (players_list[i].points == result && players_list[i].game_id != -1)
               draw++;
-            players_list[i].points = 0;
+            players_list[i].card_chosen = -1;
           }
           if (draw > 1)
             sprintf(text1, "It's a draw between %d players", draw);
           else
             sprintf(text1, "Game winner: %s", players_list[winner].member.alias);
+          sprintf(text2, "0: Leave 1: Continue");
+
+          /* notifies the players the result of the game  */
           for (i = 0; i < MAX_PLAYERS; i++)
           {
             if (players_list[i].game_id != -1)
+            {
               sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[i].member.address), sizeof(struct sockaddr_in));
+              sendto(sfd, text2, strlen(text1), 0, (struct sockaddr *)&(players_list[i].member.address), sizeof(struct sockaddr_in));
+            }
           }
-          reset_players();
+
+          players_ready = 0;
+          game_end = 1;
+
+          /* cycle to wait for players to decide if they want to leave or continue     */
+          /* with the game                                                             */
+          while (players_ready < game_participants && game_participants > 0)
+          {
+            players_ready = 0;
+            for (i = 0; i < MAX_PLAYERS; i++)
+            {
+              if (players_list[i].card_chosen != -1 && part_list[i].game_id != -1)
+                players_ready++;
+            }
+          }
+
+          /* counts the player's votes  */
+          result = 0;
+          for (i = 0; i < MAX_PLAYERS; i++)
+          {
+            if (part_list[i].game_id != -1)
+              result += players_list[i].card_chosen;
+          }
+
+          /* if more than half the players chose to end the game, the game will end    */
+          if (result < (game_participants / 2))
+          {
+            game_running = 0;
+            reset_players();
+          }
+
+          /* if players want to continue, they will get a new hand    */
+          else
+            reset_game();
+          players_ready = 0;
+          game_end = 0;
         }
       }
     }
 
+    /*if there are no participants and  the gamme is running, the game will end  */
     if (game_participants == 0 && game_running == 1)
+    {
       game_running = 0;
+      reset_players();
+    }
     sleep(1);
   }
 }
@@ -359,8 +443,10 @@ void deal_cards(int game_id)
 {
   int random;
 
+  /* gets a random card in the deck  */
   for (int i = 0; i < MAX_CARDS_HAND; i++)
   {
+    /* cylce to verify is the card is available to give to player  */
     while (1)
     {
       random = rand() % MAX_CARDS_DECK;
@@ -379,6 +465,8 @@ void show_available_cards(int game_id)
   char text1[BUFFERSIZE];
   sprintf(text1, "-----------------------------------------------------");
   sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[game_id].member.address), sizeof(struct sockaddr_in));
+
+  /* if the card is available in player's hand, it will send it to him   */
   for (int i = 0; i < MAX_CARDS_HAND; i++)
   {
     if (players_list[game_id].hand[i].available == 0)
@@ -387,26 +475,54 @@ void show_available_cards(int game_id)
       sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[game_id].member.address), sizeof(struct sockaddr_in));
     }
   }
-  sprintf(text1, "Choose a card with his id:");
+  sprintf(text1, "Choose a card with the id:");
   sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[game_id].member.address), sizeof(struct sockaddr_in));
 }
 
 void return_cards(int game_id)
 {
+  /* makes all cards in player's hand available in deck again */
   for (int i = 0; i < MAX_CARDS_HAND; i++)
     deck[players_list[game_id].hand[i].card.deck_id].available = 0;
 }
 
 void reset_players()
 {
+  char text1[BUFFERSIZE];
   game_participants = 0;
+
+  sprintf(text1, "Game finished");
+
+  /* clears the players list and notifies them that the game is over  */
+  for (int i = 0; i < MAX_PLAYERS; i++)
+  {
+    if (players_list[i].game_id != -1)
+    {
+      return_cards(players_list[i].game_id);
+      sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(players_list[i].member.address), sizeof(struct sockaddr_in));
+    }
+    players_list[i].game_id = -1;
+    players_list[i].card_chosen = -1;
+    players_list[i].points = 0;
+  }
+}
+
+void reset_game()
+{
+  /* makes all players return their cards  */
   for (int i = 0; i < MAX_PLAYERS; i++)
   {
     if (players_list[i].game_id != -1)
       return_cards(players_list[i].game_id);
-    players_list[i].game_id = -1;
     players_list[i].card_chosen = -1;
     players_list[i].points = 0;
+  }
+
+  /* deal new cards to each player         */
+  for (int i = 0; i < MAX_PLAYERS; i++)
+  {
+    if (players_list[i].game_id != -1)
+      deal_cards(players_list[i].game_id);
   }
 }
 
@@ -440,9 +556,20 @@ void ins_in_queue(struct data message, char text1[BUFFERSIZE])
       {
         queue[i].deck_id = players_list[part_list[message.chat_id].game_id].hand[atoi(text1) - 1].card.deck_id;
         players_list[part_list[message.chat_id].game_id].hand[atoi(text1) - 1].available = 1;
-        players_list[part_list[message.chat_id].game_id].card_chosen = players_list[part_list[message.chat_id].game_id].hand[atoi(text1) - 1].card.value;
-        show_available_cards(part_list[message.chat_id].game_id);
-        sprintf(text1, "[%s]:%s %s", part_list[message.chat_id].alias, deck[queue[i].deck_id].card.rank, deck[queue[i].deck_id].card.suit);
+
+        /* if the game isn't in the final state where players vote, stores the card    */
+        /* chosen by the player and sends his available cards                          */
+        if (game_end == 0)
+        {
+          players_list[part_list[message.chat_id].game_id].card_chosen = players_list[part_list[message.chat_id].game_id].hand[atoi(text1) - 1].card.value;
+          show_available_cards(part_list[message.chat_id].game_id);
+        }
+        /*if the player is voting to continue or leave the game, his choise is stored  */
+        else
+        {
+          players_list[part_list[message.chat_id].game_id].card_chosen = atoi(text1);
+        }
+        sprintf(text1, "[%s]: Chose a card", part_list[message.chat_id].alias);
       }
       else
         queue[i].deck_id = -1;
@@ -474,12 +601,12 @@ int main()
   int sfd_in;                     /* socket descriptor for read port     */
   int read_char;                  /* read characters                     */
   socklen_t lenght;               /* size of the read socket             */
-  int iret1[MAX_THREADS];         /* thread return values                */
+  int iret1[MAX_THREADS];         /* thread 1 return values              */
   pthread_t thread1[MAX_THREADS]; /* thread ids                          */
-  int iret2;
-  pthread_t thread2;
-  int iret3;
-  pthread_t thread3;
+  int iret2;                      /* thread 2 return values              */
+  pthread_t thread2;              /* thread ids                          */
+  int iret3;                      /* thread 3 return values              */
+  pthread_t thread3;              /* thread ids                          */
 
   srand(time(NULL));
 
@@ -560,18 +687,22 @@ int main()
       }
       sendto(sfd, (int *)&(i), sizeof(int), 0, (struct sockaddr *)&(sock_write), sizeof(sock_write));
     }
-    /*If data type == 2, it means it's a heartbeat*/
+    /*If data type == 2, it means it's a heartbeat  */
     if (message.data_type == 2)
       memcpy(&part_list[message.chat_id].t, &message.data_text, sizeof(time_t));
 
+    /* if data type == 3, it means it's a game related message  */
     if (message.data_type == 3)
     {
+      /* if the message is Start the game, adds the player in the players list  */
       if (strcmp(message.data_text, "Start game") == 0)
       {
+        /* gets a free postion in the players list   */
         i = 0;
         while ((players_list[i].game_id != -1) && (i < MAX_PLAYERS))
           ++i;
 
+        /* if the positon is correct, the participant is added into the players list  */
         if (i < MAX_PLAYERS)
         {
           part_list[message.chat_id].game_id = i;
@@ -580,12 +711,15 @@ int main()
           game_participants++;
           deal_cards(i);
         }
+
+        /* if there are no available spaces a message is sent to  the participant  */
         else
         {
           strcpy(text1, "Client could not join. Too many players");
           sendto(sfd, text1, strlen(text1), 0, (struct sockaddr *)&(part_list[message.chat_id].address), sizeof(struct sockaddr_in));
         }
       }
+      /* inserts in the queue the card chosen by the player  */
       else
       {
         sprintf(text1, "%s", message.data_text);

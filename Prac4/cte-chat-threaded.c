@@ -43,7 +43,7 @@ struct thread_args
   struct sockaddr_in sock_write;
 };
 
-int game_mode;
+int game_mode; /* flag to check if client is playing the game */
 /* ------------------------------------------------------------------------- */
 /* print_message()                                                           */
 /*                                                                           */
@@ -63,7 +63,9 @@ void *print_message(void *ptr)
   {
     read_char = recvfrom(*sock_desc, text1, BUFFERSIZE, 0, NULL, NULL);
     text1[read_char] = '\0';
-    if (strcmp(text1, "Not enough players to start game") == 0)
+
+    /* if the server sends a message related to the game ending, the game mode is deactivated */
+    if (strcmp(text1, "Not enough players to start game") == 0 || strcmp(text1, "Game finished") == 0 || strcmp(text1, "Client could not join. Too many players") == 0)
       game_mode = 0;
     printf("%s\n", text1);
   }
@@ -172,7 +174,7 @@ int main()
     message.chat_id = chat_id;
 
     if (game_mode == 1 && strcmp(message.data_text, "exit") != 0)
-      message.data_type = 3;
+      message.data_type = 3; /*data_type 3 is used to send game realted messages */
     else
       message.data_type = 1; /* data_type 1 is used to send message */
     if (strcmp(message.data_text, "Start game") == 0)
